@@ -10,6 +10,8 @@ else
   gum -v
 fi
 
+git status
+
 # Notify when no changes are detected.
 if git diff --quiet '*.nix'; then
   gum log --structured --level debug --time datetime "No changes detected."
