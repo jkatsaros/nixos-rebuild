@@ -2,6 +2,32 @@
 
 # Credit: 0atman (GitHub)
 
+declare flake=''
+declare no_build=false
+declare fancy=true
+
+optspec=":-:"
+while getopts "$optspec" optchar; do
+  case "${optchar}" in
+    -)
+      case "${OPTARG}" in
+        flake)
+          flake="${!OPTIND}"; OPTIND=$(( $OPTIND + 1 ))
+          echo "${flake}"
+          ;;
+        no-build)
+          no_build=true
+          ;;
+        fancy)
+          fancy=true
+          ;;
+        simple)
+          fancy=false
+          ;;
+      esac;;
+  esac
+done
+
 if command -v gum >/dev/null 2>&1 ; then
   gum log --structured --level debug --time datetime "Gum found!"
 else
@@ -26,11 +52,11 @@ if gum confirm "Rebuild?"; then
   git add .
 
   # 1. NixOS
-  gum spin --spinner points --title "NixOS rebuilding..." --show-output --show-error -- sudo nixos-rebuild switch --flake .
+  gum spin --spinner points --title "NixOS rebuilding..." --show-output --show-error -- sudo nixos-rebuild switch --flake "${flake}"
   gum log --structured --level info --time datetime "NixOS rebuild OK!"
 
   # 2. Home-Manager
-  gum spin --spinner points --title "Home Manager rebuilding..." --show-output --show-error -- home-manager switch --flake .
+  gum spin --spinner points --title "Home Manager rebuilding..." --show-output --show-error -- home-manager switch --flake "${flake}"
   gum log --structured --level info --time datetime "Home Manager rebuild OK!"
 
   # 3. Flake
