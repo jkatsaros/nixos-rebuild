@@ -15,6 +15,7 @@ import (
 
   "github.com/charmbracelet/log"
   "github.com/charmbracelet/huh"
+  "github.com/charmbracelet/huh/spinner"
 )
 
 type Configuration struct {
@@ -184,7 +185,12 @@ func main() {
     } else {
       nixosRebuildCmd := exec.Command(fmt.Printf("sudo nixos-rebuild switch %s", configurationNixPath))
     }
-    if err := nixosRebuildCmd.Run(); err != nil {
+    if err := spinner.
+      New().
+      Title("Rebuilding NixOS...").
+      Action(nixosRebuildCmd.Run()).
+      Accessible(accessible).
+      Run(); err != nil {
       logger.Fatal("NixOS rebuild failed!")
     }
     logger.Info("NixOS rebuild OK!")
@@ -196,7 +202,12 @@ func main() {
       } else {
         homemanagerRebuildCmd := exec.Command(fmt.Printf("home-manager switch %s", homeNixPath))
       }
-      if err := homemanagerRebuildCmd.Run(); err != nil {
+      if err := spinner.
+        New().
+        Title("Rebuilding Home Manager...").
+        Action(homemanagerRebuildCmd.Run()).
+        Accessible(accessible).
+        Run(); err != nil {
         logger.Fatal("Home Manager rebuild failed!")
       }
       logger.Info("Home Manager rebuild OK!")
@@ -204,7 +215,12 @@ func main() {
 
     if usingFlakes {
       flakeRebuildCmd := exec.Command(fmt.Printf("home-manager switch --flake %s", flakeNixPath))
-      if err := flakeRebuildCmd.Run(); err != nil {
+      if err := spinner.
+        New().
+        Title("Updating Flake...").
+        Action(flakeRebuildCmd.Run()).
+        Accessible(accessible).
+        Run(); err != nil {
         logger.Fatal("Nix Flake update failed!")
       }
       logger.Info("Nix Flake update OK!")
