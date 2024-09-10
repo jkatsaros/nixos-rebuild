@@ -12,6 +12,8 @@ import (
   "io"
   
   "gopkg.in/yaml.v3"
+  
+  "github.com/go-git/go-git/v5"
 
   "github.com/charmbracelet/log"
   "github.com/charmbracelet/huh"
@@ -39,23 +41,23 @@ func loadConfiguration() (Configuration, error) {
   
   file, err := os.ReadFile("configuration.yaml")
   if err != nil {
-    log.Error("Failed to read configuration file.")
+    log.Error("Could not read configuration file.")
     return nil, err
   }
 
   err = yaml.Unmarshal(file, &configuration)
   if err != nil {
-    log.Error("Failed to load configuration file.")
+    log.Error("Could not load configuration file.")
     return nil, err
   }
   
   return configuration, nil
 }
 
-func (configuration Configuration, logger Logger) saveConfiguration() error {
+func (configuration *Configuration, logger Logger) saveConfiguration() error {
   file, err := yaml.Marshal(&configuration)
   if err != nil {
-    logger.Error("Failed to load configuration.")
+    logger.Error("Could not to load configuration.")
     return err
   }
 
@@ -63,14 +65,14 @@ func (configuration Configuration, logger Logger) saveConfiguration() error {
 
   f, err := os.Open("configuration.yaml")
   if err != nil {
-    logger.Error("Failed to read configuration file.")
+    logger.Error("Could not to read configuration file.")
     return err
   }
   defer f.Close()
 
   _, err = io.WriteString(f, string(file))
   if err != nil {
-    logger.Error("Failed to write configuration file.")
+    logger.Error("Could not to write configuration file.")
     return err
   }
 }
@@ -97,6 +99,22 @@ func (s string, name string) validatePath() error {
     return err
   }
 
+  return nil
+}
+
+func (title string, command Cmd, accessible bool, logger Logger) executeCommand() error {
+  err := spinner.
+    New().
+    Title(title).
+    Action(command.Run()).
+    Accessible(accessible).
+    Run()
+    
+  if err != nil {
+    logger.Error("Could not execute command.")
+    return err
+  }
+  
   return nil
 }
 
@@ -131,30 +149,27 @@ func main() {
     huh.NewGroup(
       huh.NewInput().
         Value(&flakeNixPath).
-        Title("Enter the path to configuration.nix:").
+        Title("Enter the path to 'configuration.nix':").
         Placeholder(".dotfiles").
-        Validate(if err := validatePath(s, "configuration.nix"); logger.Fatal(err)).
-        Description("This is a test."),
+        Validate(if err := validatePath(s, "configuration.nix"); logger.Fatal(err)),
     ).
     WithHide(if len(strings.TrimSpace(flakeNixPath)) != 0),
     
     huh.NewGroup(
       huh.NewInput().
         Value(&homeNixPath).
-        Title("Enter the path to home.nix:")
+        Title("Enter the path to 'home.nix':")
         Placeholder(".dotfiles").
-        Validate(if err := validatePath(s, "home.nix"); logger.Fatal(err)).
-        Description("This is a test.")
+        Validate(if err := validatePath(s, "home.nix"); logger.Fatal(err)),
     ).
     WithHide(if usingHomeManager && len(strings.TrimSpace(homeNixPath)) != 0),
     
     huh.NewGroup(
       huh.NewInput().
         Value(&flakeNixPath).
-        Title("Enter the path to flake.nix:")
+        Title("Enter the path to 'flake.nix':")
         Placeholder(".dotfiles").
-        Validate(if err := validatePath(s, "flake.nix"); logger.Fatal(err)).
-        Description("This is a test.")
+        Validate(if err := validatePath(s, "flake.nix"); logger.Fatal(err)),
     ).
     WithHide(if usingFlakes && len(strings.TrimSpace(flakeNixPath)) != 0),
 
@@ -178,50 +193,35 @@ func main() {
 
   logger.Debug("No changes detected.")
 
-  if rebuildOptions.Rebuild {
+  if shouldRebuild {
     var nixosRebuildCmd Cmd
     if usingFlakes {
-      nixosRebuildCmd := exec.Command(fmt.Printf("sudo nixos-rebuild switch --flake %s", flakeNixPath))
+      nixosRebuildCmd := exec.Command("sudo", "nixos-rebuild", "switch", "--flake", flakeNixPath)
     } else {
-      nixosRebuildCmd := exec.Command(fmt.Printf("sudo nixos-rebuild switch %s", configurationNixPath))
+      nixosRebuildCmd := exec.Command("sudo", "nixos-rebuild", "switch", configurationNixPath)
     }
-    if err := spinner.
-      New().
-      Title("Rebuilding NixOS...").
-      Action(nixosRebuildCmd.Run()).
-      Accessible(accessible).
-      Run(); err != nil {
-      logger.Fatal("NixOS rebuild failed!")
+    if err := executeCommand("NixOS rebuilding...", nixosRebuildCmd, accessible, logger); err != nil {
+      logger.Fatal("Could not rebuild NixOS.")
     }
     logger.Info("NixOS rebuild OK!")
 
     if usingHomeManager {
       var homemanagerRebuildCmd Cmd
       if usingFlakes {
-      homemanagerRebuildCmd := exec.Command(fmt.Printf("home-manager switch --flake %s", flakeNixPath))
+      homemanagerRebuildCmd := exec.Command("home-manager", "switch", "--flake", flakeNixPath)
       } else {
-        homemanagerRebuildCmd := exec.Command(fmt.Printf("home-manager switch %s", homeNixPath))
+        homemanagerRebuildCmd := exec.Command("home-manager", "switch", homeNixPath)
       }
-      if err := spinner.
-        New().
-        Title("Rebuilding Home Manager...").
-        Action(homemanagerRebuildCmd.Run()).
-        Accessible(accessible).
-        Run(); err != nil {
-        logger.Fatal("Home Manager rebuild failed!")
+      if err := executeCommand("Home Manager rebuilding...", homemanagerRebuildCmd, accessible, logger); err != nil {
+        logger.Fatal("Could not rebuild Home Manager.")
       }
       logger.Info("Home Manager rebuild OK!")
     }
 
     if usingFlakes {
-      flakeRebuildCmd := exec.Command(fmt.Printf("home-manager switch --flake %s", flakeNixPath))
-      if err := spinner.
-        New().
-        Title("Updating Flake...").
-        Action(flakeRebuildCmd.Run()).
-        Accessible(accessible).
-        Run(); err != nil {
-        logger.Fatal("Nix Flake update failed!")
+      flakeRebuildCmd := exec.Command("nix", "flake", "update")
+      if err := executeCommand("Flake updating...", flakeRebuildCmd, accessible, logger); err != nil {
+        logger.Fatal("Could not update Flake.")
       }
       logger.Info("Nix Flake update OK!")
     }
