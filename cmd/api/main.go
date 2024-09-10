@@ -12,8 +12,6 @@ import (
   "io"
   
   "gopkg.in/yaml.v3"
-  
-  "github.com/go-git/go-git/v5"
 
   "github.com/charmbracelet/log"
   "github.com/charmbracelet/huh"
@@ -61,8 +59,6 @@ func (configuration *Configuration, logger Logger) saveConfiguration() error {
     return err
   }
 
-  fmt.Println(string(file))
-
   f, err := os.Open("configuration.yaml")
   if err != nil {
     logger.Error("Could not to read configuration file.")
@@ -102,7 +98,7 @@ func (s string, name string) validatePath() error {
   return nil
 }
 
-func (title string, command Cmd, accessible bool, logger Logger) executeCommand() error {
+func (title string, command Cmd, accessible bool, logger Logger) executeNixCommand() error {
   err := spinner.
     New().
     Title(title).
@@ -112,6 +108,28 @@ func (title string, command Cmd, accessible bool, logger Logger) executeCommand(
     
   if err != nil {
     logger.Error("Could not execute command.")
+    return err
+  }
+  
+  return nil
+}
+
+func (command Cmd, logger Logger) executeGitCommand() error {
+  stdout, err := command.StdoutPipe()
+  if err != nil {
+    logger.Error(err)
+    return err
+  }
+  
+  if err := command.Start(); err != nil {
+    logger.Error(err)
+    return err
+  }
+  
+  logger.Debug(stdout)
+  
+  if err := command.Wait(); err != nil {
+    logger.Error(err)
     return err
   }
   
@@ -141,6 +159,8 @@ func main() {
     usingFlakes = configuration.RebuildSettings.UsingFlakes
     flakeNixPath = configuration.RebuildSettings.FlakeNixPath
     shouldRebuild bool
+    shouldCommit bool
+    currentGeneration string
   )
 
   accessible, _ := strconv.ParseBool(os.Getenv("ACCESSIBLE"))
@@ -191,16 +211,33 @@ func main() {
     logger.Fatal(err)
   }
 
+  gitDiffQuietCmd := exec.Command("git", "diff", "--quiet", "'*.nix'")
+  err := executeGitCommand(gitDiffQuietCmd, logger)
+  if err != nil {
+    logger.Fatal("Could not .")
+  }
   logger.Debug("No changes detected.")
+  
+  gitDiffCmd := exec.Command("git", "diff", "-U0", "'*.nix'")
+  err := executeGitCommand(gitDiffCmd, logger)
+  if err != nil {
+    logger.Fatal("Could not .")
+  }
 
   if shouldRebuild {
+    gitAddAllCmd := exec.Command("git", "add", ".")
+    err := executeGitCommand(gitAddAllCmd, logger)
+    if err != nil {
+      logger.Fatal("Could not .")
+    }
+    
     var nixosRebuildCmd Cmd
     if usingFlakes {
       nixosRebuildCmd := exec.Command("sudo", "nixos-rebuild", "switch", "--flake", flakeNixPath)
     } else {
       nixosRebuildCmd := exec.Command("sudo", "nixos-rebuild", "switch", configurationNixPath)
     }
-    if err := executeCommand("NixOS rebuilding...", nixosRebuildCmd, accessible, logger); err != nil {
+    if err := executeNixCommand("NixOS rebuilding...", nixosRebuildCmd, accessible, logger); err != nil {
       logger.Fatal("Could not rebuild NixOS.")
     }
     logger.Info("NixOS rebuild OK!")
@@ -212,7 +249,7 @@ func main() {
       } else {
         homemanagerRebuildCmd := exec.Command("home-manager", "switch", homeNixPath)
       }
-      if err := executeCommand("Home Manager rebuilding...", homemanagerRebuildCmd, accessible, logger); err != nil {
+      if err := executeNixCommand("Home Manager rebuilding...", homemanagerRebuildCmd, accessible, logger); err != nil {
         logger.Fatal("Could not rebuild Home Manager.")
       }
       logger.Info("Home Manager rebuild OK!")
@@ -220,10 +257,46 @@ func main() {
 
     if usingFlakes {
       flakeRebuildCmd := exec.Command("nix", "flake", "update")
-      if err := executeCommand("Flake updating...", flakeRebuildCmd, accessible, logger); err != nil {
+      if err := executeNixCommand("Flake updating...", flakeRebuildCmd, accessible, logger); err != nil {
         logger.Fatal("Could not update Flake.")
       }
-      logger.Info("Nix Flake update OK!")
+      logger.Info("Flake update OK!")
+    }
+    
+    form := huh.NewForm(
+      huh.NewGroup(
+        huh.NewConfirm().
+          Title("Commit Changes?").
+          Value(&shouldCommit),
+      ),
+    )
+    .WithAccessible(accessible)
+    
+    err := form.Run()
+    if err != nil {
+      logger.Fatal(err)
+    }
+    
+    if commitChanges {
+      getCurrentNixGenerationCmd := exec.Command("nixos-rebuild", "list-generations", "|", "grep", "current")
+      &currentGeneration, err := getCurrentNixGenerationCmd.StdoutPipe()
+      if err != nil {
+        logger.Fatal(err)
+      }
+  
+      if err := getCurrentNixGenerationCmd.Start(); err != nil {
+        logger.Fatal(err)
+      }
+  
+      if err := getCurrentNixGenerationCmd.Wait(); err != nil {
+        logger.Fatal(err)
+      }
+      
+      gitCommitCmd := exec.Command("git", "commit", "-am", currentGeneration)
+      err := executeGitCommand(gitCommitCmd, logger)
+      if err != nil {
+        logger.Fatal("Could not commit changes.")
+      }
     }
 
     logger.Info("Success!")
