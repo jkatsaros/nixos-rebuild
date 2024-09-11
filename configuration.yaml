@@ -1,0 +1,11 @@
+LoggingSettings:
+  TimeFormat: 'datetime'
+  Prefix: ''
+  ReportTimestamp: true
+  ReportCaller: false
+RebuildSettings:
+  ConfigurationNixPath: '/home/katsa/.dotfiles/configuration.nix'
+  UsingHomeManager: true
+  HomeNixPath: '/home/katsa/.dotfiles/home.nix'
+  UsingFlakes: true
+  FlakeNixPath: '/home/katsa/.dotfiles/flake.nix'
